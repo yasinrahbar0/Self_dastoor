@@ -402,12 +402,15 @@ async def main():
     print(f"🔥 Ultimate Modular Userbot Started as {me.first_name} ({me.id})")
     await client.run_until_disconnected()
 
-if __name__ == "__main__":
-    t = threading.Thread(target=run_web)
-    t.daemon = True
-    t.start()
+async def start_all():
+    # Run web server in executor (thread)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, run_web)
+    # Start client
+    await main()
 
+if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(start_all())
     except KeyboardInterrupt:
         pass
