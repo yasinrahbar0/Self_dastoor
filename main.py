@@ -102,6 +102,16 @@ async def style_handler(e):
     if styled != e.text:
         await e.edit(styled)
 
+# ====== EMOJI TASH ======
+DICE_EMOJIS = {
+    1: "🎲1️⃣",
+    2: "🎲2️⃣",
+    3: "🎲3️⃣",
+    4: "🎲4️⃣",
+    5: "🎲5️⃣",
+    6: "🎲6️⃣"
+}
+
 # ========= HELP =========
 @client.on(events.NewMessage(pattern=r"(^|\s)\.help($|\s)"))
 async def help_cmd(e):
@@ -132,6 +142,9 @@ async def help_cmd(e):
 .addreply key=value → اضافه کردن پاسخ خودکار
 .delreply key → حذف پاسخ خودکار
 
+🎲 Dice:
+.tas <1-6> → ارسال تاس با عدد دلخواه
+
 💾 Media:
 .save → ذخیره فایل نابودشونده
 
@@ -152,6 +165,20 @@ async def toggle_style(e):
     settings["style"][cmd] = state == "on"
     save_settings()
     await e.reply(f"{cmd} => {state}")
+
+# ========= TAS =========
+@client.on(events.NewMessage(pattern=r".*\.tas (\d)"))
+async def tas(e):
+    if not is_owner(e):
+        return
+    try:
+        number = int(e.pattern_match.group(1))
+        if 1 <= number <= 6:
+            await e.reply(DICE_EMOJIS[number])
+        else:
+            await e.reply("عدد باید بین 1 تا 6 باشه 🎲")
+    except:
+        await e.reply("خطا در دریافت عدد تاس 🎲")
 
 # ========= MODES =========
 @client.on(events.NewMessage(pattern=r".*\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
@@ -316,9 +343,24 @@ async def anti_delete_func(e):
     if settings["antidelete"]:
         for msg_id in e.deleted_ids:
             try:
-                await client.send_message(LOG_CHAT, f"🚨 Deleted ID: {msg_id}")
-            except Exception:
-                pass
+                msg = await client.get_messages(e.chat_id, ids=msg_id)
+                if msg:
+                    # فقط متن، عکس، ویدیو، ویس و اهنگ
+                    if msg.text or msg.media:
+                        sender_name = "کاربر"
+                        if msg.sender:
+                            if hasattr(msg.sender, "username") and msg.sender.username:
+                                sender_name = f"@{msg.sender.username}"
+                            elif hasattr(msg.sender, "first_name") and msg.sender.first_name:
+                                sender_name = msg.sender.first_name
+
+                        content = msg.text if msg.text else "[مدیا]"
+                        await client.send_message(
+                            LOG_CHAT,
+                            f"🛡️ پیام حذف شد از {sender_name}:\n\n{content}"
+                        )
+            except Exception as ex:
+                print(f"Error in anti-delete: {ex}")
 
 # ========= INVISIBLE =========
 @client.on(events.NewMessage)
