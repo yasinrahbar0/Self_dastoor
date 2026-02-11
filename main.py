@@ -68,14 +68,6 @@ def is_owner(e):
             return False
     return True
 
-def get_real_text(text):
-    if not settings["pass"]:
-        return text
-    prefix = f".{settings['pass']}"
-    if text.startswith(prefix):
-        return text[len(prefix):].strip()
-    return text
-
 def apply_style(text):
     if not text:
         return text
