@@ -2,7 +2,7 @@ import os, json, asyncio, threading, glob, importlib, random
 from datetime import datetime
 from collections import defaultdict
 from flask import Flask
-from telethon import TelegramClient, events, Button, functions
+from telethon import TelegramClient, events, functions
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
 
@@ -20,9 +20,12 @@ def home():
     return "Ultimate Modular Userbot Running 🔥"
 
 def run_web():
+    print("--- Starting Flask Server ---")
     app.run(host="0.0.0.0", port=10000)
 
 # ========= CLIENT =========
+# We must always have a client instance for decorators to work.
+# If SESSION is empty, it will fail later in main() with a clear message.
 client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
 
 # ========= SETTINGS =========
@@ -53,16 +56,24 @@ user_spam = defaultdict(list)
 group_stats = defaultdict(int)
 
 def save_settings():
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
-    with open(BACKUP_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=4)
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=4)
+        with open(BACKUP_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
 
 def is_owner(e):
-    if e.sender_id != OWNER_ID:
+    # Check if sender is owner (either outgoing or matches OWNER_ID)
+    is_owner_id = e.out or (e.sender_id and e.sender_id == OWNER_ID)
+
+    if not is_owner_id:
         return False
+
     if settings["pass"]:
-        if not e.text or not e.text.startswith(f".{settings['pass']}"):
+        prefix = f".{settings['pass']}"
+        if not e.text or not e.text.startswith(prefix):
             return False
     return True
 
@@ -82,14 +93,17 @@ def apply_style(text):
 # ========= STYLE HANDLER =========
 @client.on(events.NewMessage(outgoing=True))
 async def style_handler(e):
-    if not e.text or e.text.startswith("."):
+    if not e.text:
+        return
+    # Don't style commands
+    if e.text.startswith("."):
         return
     styled = apply_style(e.text)
     if styled != e.text:
         await e.edit(styled)
 
 # ========= HELP =========
-@client.on(events.NewMessage(pattern=r"\.help"))
+@client.on(events.NewMessage(pattern=r"(^|\s)\.help($|\s)"))
 async def help_cmd(e):
     if not is_owner(e):
         return
@@ -105,8 +119,8 @@ async def help_cmd(e):
 ⚡ Modes:
 .god on/off → پاسخ خودکار سلطنتی
 .autoreply on/off → پاسخ خودکار ساده
-.antidelete on/off → جلوگیری از حذف پیام
-.invisible on/off → Seen نخوردن و مخفی بودن
+.antidelete on/off → لاگ آیدی پیام‌های حذف شده
+.invisible on/off → حالت روح (Seen نخوردن)
 .lock on/off → قفل کردن دستورات فقط برای OWNER
 
 🛡 Security:
@@ -122,15 +136,15 @@ async def help_cmd(e):
 .save → ذخیره فایل نابودشونده
 
 🎛 Management:
-.panel → باز کردن پنل مدیریتی
+.status → نمایش وضعیت تنظیمات
 .backup → بکاپ تنظیمات
 .restore → ریستور تنظیمات
-.setpass <password> → گذاشتن رمز برای دستورات
+.setpass <password> → گذاشتن رمز برای دستورات (off برای غیرفعال کردن)
 """
     await e.reply(msg)
 
 # ========= STYLE =========
-@client.on(events.NewMessage(pattern=r"\.(bold|italic|code|quote) (on|off)"))
+@client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote) (on|off)"))
 async def toggle_style(e):
     if not is_owner(e):
         return
@@ -140,7 +154,7 @@ async def toggle_style(e):
     await e.reply(f"{cmd} => {state}")
 
 # ========= MODES =========
-@client.on(events.NewMessage(pattern=r"\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
+@client.on(events.NewMessage(pattern=r".*\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
 async def toggle_modes(e):
     if not is_owner(e):
         return
@@ -153,7 +167,7 @@ async def toggle_modes(e):
 # ========= SPAM CONTROL =========
 @client.on(events.NewMessage(incoming=True))
 async def spam_control(e):
-    if e.sender_id == OWNER_ID:
+    if not e.sender_id or e.sender_id == OWNER_ID or e.out:
         return
     now = datetime.now().timestamp()
     user_spam[e.sender_id] = [t for t in user_spam[e.sender_id] if now - t < settings["spam_time"]]
@@ -161,7 +175,7 @@ async def spam_control(e):
     if len(user_spam[e.sender_id]) > settings["spam_limit"]:
         await e.delete()
 
-@client.on(events.NewMessage(pattern=r"\.spam (\d+) (\d+)"))
+@client.on(events.NewMessage(pattern=r".*\.spam (\d+) (\d+)"))
 async def set_spam(e):
     if not is_owner(e):
         return
@@ -171,7 +185,7 @@ async def set_spam(e):
     await e.reply("Spam control updated")
 
 # ========= CLEANER =========
-@client.on(events.NewMessage(pattern=r"\.clean (\d+)"))
+@client.on(events.NewMessage(pattern=r".*\.clean (\d+)"))
 async def cleaner(e):
     if not is_owner(e):
         return
@@ -181,7 +195,7 @@ async def cleaner(e):
             await msg.delete()
 
 # ========= STATS =========
-@client.on(events.NewMessage(pattern=r"\.stats"))
+@client.on(events.NewMessage(pattern=r".*\.stats"))
 async def stats_cmd(e):
     if not is_owner(e):
         return
@@ -193,7 +207,7 @@ async def stats_counter(e):
     group_stats[e.chat_id] += 1
 
 # ========= KEYWORD REPLY =========
-@client.on(events.NewMessage(pattern=r"\.addreply (.+)"))
+@client.on(events.NewMessage(pattern=r".*\.addreply (.+)"))
 async def add_reply(e):
     if not is_owner(e):
         return
@@ -205,7 +219,7 @@ async def add_reply(e):
     save_settings()
     await e.reply("Reply added")
 
-@client.on(events.NewMessage(pattern=r"\.delreply (.+)"))
+@client.on(events.NewMessage(pattern=r".*\.delreply (.+)"))
 async def del_reply(e):
     if not is_owner(e):
         return
@@ -223,7 +237,7 @@ async def keyword_auto(e):
             await e.reply(v)
 
 # ========= SAVE SELF-DESTRUCT FILE =========
-@client.on(events.NewMessage(pattern=r"\.save"))
+@client.on(events.NewMessage(pattern=r".*\.save"))
 async def save_media(e):
     if not is_owner(e):
         return
@@ -234,51 +248,31 @@ async def save_media(e):
         file = await msg.download_media()
         await client.send_file("me", file)
         await e.reply("Saved to Saved Messages ✅")
+        if os.path.exists(file):
+            os.remove(file)
 
-# ========= PANEL =========
-@client.on(events.NewMessage(pattern=r"\.panel"))
-async def panel(e):
+# ========= STATUS =========
+@client.on(events.NewMessage(pattern=r".*\.status"))
+async def status_cmd(e):
     if not is_owner(e):
         return
-    await e.respond(
-        "⚙️ Control Panel",
-        buttons=[
-            [Button.inline("God Mode", b"god")],
-            [Button.inline("Auto Reply", b"auto")],
-            [Button.inline("Invisible", b"invisible")],
-            [Button.inline("Status", b"status")]
-        ]
-    )
-
-@client.on(events.CallbackQuery)
-async def callbacks(e):
-    if e.sender_id != OWNER_ID:
-        return
-    data = e.data.decode()
-    if data == "god":
-        settings["god"] = not settings["god"]
-        save_settings()
-        await e.answer("God toggled")
-    elif data == "auto":
-        settings["autoreply"] = not settings["autoreply"]
-        save_settings()
-        await e.answer("Auto toggled")
-    elif data == "invisible":
-        settings["invisible"] = not settings["invisible"]
-        save_settings()
-        await e.answer("Invisible toggled")
-    elif data == "status":
-        await e.answer("Settings updated", alert=True)
+    status_text = f"⚙️ **Bot Status:**\n\n"
+    status_text += f"God Mode: {'ON' if settings['god'] else 'OFF'}\n"
+    status_text += f"Auto Reply: {'ON' if settings['autoreply'] else 'OFF'}\n"
+    status_text += f"Anti-Delete: {'ON' if settings['antidelete'] else 'OFF'}\n"
+    status_text += f"Invisible: {'ON' if settings['invisible'] else 'OFF'}\n"
+    status_text += f"Password: {'Set' if settings['pass'] else 'OFF'}\n"
+    await e.reply(status_text)
 
 # ========= BACKUP =========
-@client.on(events.NewMessage(pattern=r"\.backup"))
+@client.on(events.NewMessage(pattern=r".*\.backup"))
 async def backup(e):
     if not is_owner(e):
         return
     save_settings()
     await e.reply("Backup saved")
 
-@client.on(events.NewMessage(pattern=r"\.restore"))
+@client.on(events.NewMessage(pattern=r".*\.restore"))
 async def restore(e):
     if not is_owner(e):
         return
@@ -290,11 +284,10 @@ async def restore(e):
         await e.reply("Restored")
 
 # ========= SET PASSWORD =========
-@client.on(events.NewMessage(pattern=r"\.setpass (.+)"))
+@client.on(events.NewMessage(pattern=r".*\.setpass (.+)"))
 async def setpass(e):
     if not is_owner(e):
         return
-    # Note: password is set without the prefix
     new_pass = e.pattern_match.group(1).strip()
     if new_pass == "off":
         settings["pass"] = ""
@@ -330,11 +323,11 @@ async def anti_delete_func(e):
 # ========= INVISIBLE =========
 @client.on(events.NewMessage)
 async def invisible_func(e):
-    if settings["invisible"] and not e.out:
-        try:
-            await client(functions.messages.ReadHistoryRequest(peer=e.chat_id, max_id=0))
-        except Exception:
-            pass
+    # For userbots, "Invisible" typically means NOT sending read receipts.
+    # Telethon doesn't send them automatically unless you call ReadHistoryRequest.
+    # So if "Invisible" is ON, we just DO NOTHING.
+    # The previous code was sending them if ON, which is the opposite of ghost mode.
+    pass
 
 # ========= PLUGIN LOADER =========
 if not os.path.exists("plugins"):
@@ -349,12 +342,30 @@ for file in glob.glob("plugins/*.py"):
 
 # ========= MAIN =========
 async def main():
-    await client.start()
-    print("🔥 Ultimate Modular Userbot Started")
+    if not SESSION:
+        print("--- ERROR: SESSION environment variable is missing! ---")
+        return
+
+    print("--- Connecting to Telegram ---")
+    try:
+        await client.start()
+        if not await client.is_user_authorized():
+            print("--- ERROR: SESSION is invalid or expired! ---")
+            return
+    except Exception as ex:
+        print(f"--- Connection Failed: {ex} ---")
+        return
+
+    me = await client.get_me()
+    print(f"🔥 Ultimate Modular Userbot Started as {me.first_name} ({me.id})")
     await client.run_until_disconnected()
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_web)
     t.daemon = True
     t.start()
-    asyncio.run(main())
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

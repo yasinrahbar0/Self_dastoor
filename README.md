@@ -30,3 +30,5 @@ Ultimate Modular Final Build – Everything for the OWNER only.
 pip install -r requirements.txt
 python3 main.py
 ```
+
+> **Note for Render Users:** Render's free tier uses an ephemeral file system. Any changes to settings (passwords, keywords, etc.) made while the bot is running will be lost when the bot restarts or redeploys.
