@@ -6,7 +6,6 @@ Ultimate Modular Final Build – Everything for the OWNER only.
 ### Features:
 - All modes (God, AutoReply, AntiDelete, Invisible, Lock)
 - Text Style (Bold, Italic, Code, Quote)
-- Translation (.tr)
 - Smart Response (.addreply/.delreply)
 - Save self-destructing files (.save)
 - Spam Control, Cleaner, Stats

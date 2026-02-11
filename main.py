@@ -5,7 +5,6 @@ from flask import Flask
 from telethon import TelegramClient, events, Button, functions
 from telethon.sessions import StringSession
 from telethon.errors import FloodWaitError
-from googletrans import Translator
 
 # ========= ENV =========
 API_ID = int(os.getenv("API_ID", 0))
@@ -25,7 +24,6 @@ def run_web():
 
 # ========= CLIENT =========
 client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
-translator = Translator()
 
 # ========= SETTINGS =========
 SETTINGS_FILE = "settings.json"
@@ -104,9 +102,6 @@ async def help_cmd(e):
 .code on/off → فعال/غیر فعال کردن کد
 .quote on/off → فعال/غیر فعال کردن نقل قول
 
-🌍 Translate:
-.tr <lang> → ترجمه پیام ریپلای‌شده
-
 ⚡ Modes:
 .god on/off → پاسخ خودکار سلطنتی
 .autoreply on/off → پاسخ خودکار ساده
@@ -143,25 +138,6 @@ async def toggle_style(e):
     settings["style"][cmd] = state == "on"
     save_settings()
     await e.reply(f"{cmd} => {state}")
-
-# ========= TRANSLATE =========
-@client.on(events.NewMessage(pattern=r"\.tr (.+)"))
-async def translate_cmd(e):
-    if not is_owner(e):
-        return
-    lang = e.pattern_match.group(1)
-    if not e.reply_to_msg_id:
-        return await e.reply("Reply to message")
-    msg = await e.get_reply_message()
-    if not msg or not msg.text:
-        return await e.reply("Message has no text")
-    try:
-        # translator.translate is sync, but we are in async.
-        # Ideally use a threadpool or an async translator.
-        result = await asyncio.to_thread(translator.translate, msg.text, dest=lang)
-        await e.reply(result.text)
-    except Exception as ex:
-        await e.reply(f"Translation Error: {str(ex)}")
 
 # ========= MODES =========
 @client.on(events.NewMessage(pattern=r"\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
