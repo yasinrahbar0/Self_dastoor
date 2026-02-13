@@ -122,6 +122,44 @@ DICE_EMOJIS = {
 panel_msg_id = None
 PANEL_TEXT = "🔥 **Ultimate Control Panel** 🔥\n━━━━━━━━━━━━━━━━━━\nمدیریت کامل یوزربات"
 
+HELP_TEXT = """
+🔥 **Ultimate Modular Userbot - راهنما** 🔥
+
+📌 **سبک‌ها:**
+.bold on/off → فعال/غیر فعال کردن بولد
+.italic on/off → فعال/غیر فعال کردن ایتالیک
+.code on/off → فعال/غیر فعال کردن کد
+.quote on/off → فعال/غیر فعال کردن نقل قول
+
+⚡ **حالت‌ها:**
+.god on/off → پاسخ خودکار سلطنتی
+.autoreply on/off → پاسخ خودکار ساده
+.antidelete on/off → لاگ پیام‌های حذف شده
+.invisible on/off → حالت روح
+.lock on/off → قفل دستورات فقط برای OWNER
+
+🛡 **امنیت:**
+.spam <limit> <time> → کنترل اسپم
+.clean <count> → حذف پیام‌های خودت
+.stats → تعداد پیام‌های چت
+
+🧠 **پاسخ خودکار با کلیدواژه:**
+.addreply key=value → اضافه کردن پاسخ
+.delreply key → حذف پاسخ
+
+🎲 **تاس:**
+.tas <1-6> → ارسال تاس با عدد دلخواه
+
+💾 **فایل‌ها:**
+.save → ذخیره فایل نابودشونده
+
+🎛 **مدیریت:**
+.status → نمایش وضعیت
+.backup → بکاپ تنظیمات
+.restore → ریستور تنظیمات
+.setpass <password> → گذاشتن رمز روی دستورات
+"""
+
 def status_emoji(val):
     return "🟢" if val else "🔴"
 
@@ -134,8 +172,10 @@ async def create_panel():
     chat = OWNER_ID if OWNER_ID else "me"
 
     markup = [
-        [Button.inline("🎨 Styles", b"styles"), Button.inline("⚡ Modes", b"modes")],
-        [Button.inline("📊 Status", b"status"), Button.inline("❌ Close", b"close")]
+        [Button.inline("📖 راهنما", b"help")],
+        [Button.inline("🎨 سبک‌ها", b"styles"), Button.inline("⚡ حالت‌ها", b"modes")],
+        [Button.inline("🛡️ امنیت", b"security"), Button.inline("🧠 پاسخ خودکار", b"keywords")],
+        [Button.inline("📊 وضعیت", b"status"), Button.inline("❌ بستن", b"close")]
     ]
 
     try:
@@ -155,6 +195,17 @@ if bot_client:
 
         if data == "close":
             await e.delete()
+        elif data == "help":
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await e.edit(HELP_TEXT, buttons=buttons)
+        elif data == "security":
+            text = "🛡️ **امنیت:**\n\n.spam <limit> <time> → کنترل اسپم\n.clean <count> → حذف پیام‌های خودت\n.stats → تعداد پیام‌های چت"
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await e.edit(text, buttons=buttons)
+        elif data == "keywords":
+            text = "🧠 **پاسخ خودکار:**\n\n.addreply key=value → اضافه کردن پاسخ\n.delreply key → حذف پاسخ"
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await e.edit(text, buttons=buttons)
         elif data == "styles":
             buttons = [
                 [Button.inline(f"Bold {status_emoji(settings['style']['bold'])}", b"toggle_bold"),
@@ -192,8 +243,10 @@ if bot_client:
             await e.edit(text, buttons=buttons)
         elif data == "main":
             markup = [
-                [Button.inline("🎨 Styles", b"styles"), Button.inline("⚡ Modes", b"modes")],
-                [Button.inline("📊 Status", b"status"), Button.inline("❌ Close", b"close")]
+                [Button.inline("📖 راهنما", b"help")],
+                [Button.inline("🎨 سبک‌ها", b"styles"), Button.inline("⚡ حالت‌ها", b"modes")],
+                [Button.inline("🛡️ امنیت", b"security"), Button.inline("🧠 پاسخ خودکار", b"keywords")],
+                [Button.inline("📊 وضعیت", b"status"), Button.inline("❌ بستن", b"close")]
             ]
             await e.edit(PANEL_TEXT, buttons=markup)
         elif data.startswith("toggle_"):
@@ -210,7 +263,7 @@ if bot_client:
 
 # ========= USER COMMANDS =========
 
-@user_client.on(events.NewMessage(outgoing=True, pattern=r".*\.help($|\s)"))
+@user_client.on(events.NewMessage(outgoing=True, pattern=r".*\.(help|panel)($|\s)"))
 async def help_cmd(e):
     if not is_owner(e):
         return
