@@ -22,6 +22,7 @@ Ultimate Modular Final Build – Everything for the OWNER only.
 - `API_ID`: Your Telegram API ID
 - `API_HASH`: Your Telegram API Hash
 - `SESSION`: Your Telethon String Session
+- `BOT_TOKEN`: (Optional) Your Telegram Bot Token for the professional control panel.
 - `OWNER_ID`: Your Telegram User ID
 - `LOG_CHAT`: Chat ID for logs (Anti-delete notifications)
 

@@ -9,6 +9,7 @@ from telethon.sessions import StringSession
 API_ID = int(os.getenv("API_ID", 0))
 API_HASH = os.getenv("API_HASH", "")
 SESSION = os.getenv("SESSION", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 LOG_CHAT = int(os.getenv("LOG_CHAT", 0))
 
@@ -16,16 +17,17 @@ LOG_CHAT = int(os.getenv("LOG_CHAT", 0))
 app = Flask(__name__)
 @app.route("/")
 def home():
-    return "Ultimate Modular Userbot Running 🔥"
+    return "Ultimate Modular Userbot + Bot Panel Running 🔥"
 
 def run_web():
     print("--- Starting Flask Server ---")
     app.run(host="0.0.0.0", port=10000)
 
-# ========= CLIENT =========
-# We must always have a client instance for decorators to work.
-# If SESSION is empty, it will fail later in main() with a clear message.
-client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
+# ========= CLIENTS =========
+user_client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
+bot_client = None
+if BOT_TOKEN:
+    bot_client = TelegramClient('bot_panel', API_ID, API_HASH)
 
 # ========= SETTINGS =========
 SETTINGS_FILE = "settings.json"
@@ -107,8 +109,9 @@ def apply_style(text):
 
     return text
 
-# ========= STYLE HANDLER =========
-@client.on(events.NewMessage(outgoing=True))
+# ========= USER CLIENT HANDLERS =========
+
+@user_client.on(events.NewMessage(outgoing=True))
 async def style_handler(e):
     if not e.text:
         return
@@ -129,19 +132,23 @@ DICE_EMOJIS = {
     6: "🎲6️⃣"
 }
 
-# ========= CLEAN DOUBLE ROW CONTROL PANEL =========
+# ========= BOT PANEL LOGIC =========
 
-def style_status(name):
-    return "🟢" if settings["style"][name] else "🔴"
+PANEL_TEXT = "🔥 **Ultimate Control Panel** 🔥\n━━━━━━━━━━━━━━━━━━\nمدیریت کامل یوزربات"
 
-def mode_status(name):
-    return "🟢" if settings[name] else "🔴"
+def status_emoji(val):
+    return "🟢" if val else "🔴"
 
-
-@client.on(events.NewMessage(outgoing=True, pattern=r".*\.help($|\s)"))
-async def help_panel(e):
-    if not is_owner(e):
+async def create_panel():
+    if not bot_client:
         return
+
+    # Try to find existing panel message in bot's chat with owner
+    panel_msg_id = None
+    async for msg in bot_client.iter_messages(OWNER_ID, limit=20):
+        if msg.text and "Ultimate Control Panel" in msg.text:
+            panel_msg_id = msg.id
+            break
 
     buttons = [
         [
@@ -154,136 +161,106 @@ async def help_panel(e):
         ]
     ]
 
-    await e.edit(
-        "🔥 **Ultimate Control Panel** 🔥\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "مدیریت کامل یوزربات",
-        buttons=buttons
-    )
+    if panel_msg_id:
+        try:
+            await bot_client.edit_message(OWNER_ID, panel_msg_id, PANEL_TEXT, buttons=buttons)
+        except Exception:
+            msg = await bot_client.send_message(OWNER_ID, PANEL_TEXT, buttons=buttons)
+    else:
+        await bot_client.send_message(OWNER_ID, PANEL_TEXT, buttons=buttons)
 
+if bot_client:
+    @bot_client.on(events.CallbackQuery)
+    async def panel_handler(e):
+        if e.sender_id != OWNER_ID:
+            return await e.answer("⚠️ You are not the owner!", alert=True)
 
-@client.on(events.CallbackQuery)
-async def panel_handler(e):
-    if e.sender_id != OWNER_ID:
-        return await e.answer("⚠️ You are not the owner!", alert=True)
+        data = e.data.decode()
 
-    if e.data == b"panel_styles":
-
-        buttons = [
-            [
-                Button.inline(f"Bold {style_status('bold')}", b"toggle_bold"),
-                Button.inline(f"Italic {style_status('italic')}", b"toggle_italic")
-            ],
-            [
-                Button.inline(f"Code {style_status('code')}", b"toggle_code"),
-                Button.inline(f"Quote {style_status('quote')}", b"toggle_quote")
-            ],
-            [
-                Button.inline(f"Spoiler {style_status('spoiler')}", b"toggle_spoiler"),
-                Button.inline(f"Strike {style_status('strike')}", b"toggle_strike")
-            ],
-            [
-                Button.inline("🔙 Back", b"panel_main"),
-                Button.inline("❌ Close", b"panel_close")
+        if data == "panel_close":
+            await e.delete()
+        elif data == "panel_styles":
+            buttons = [
+                [Button.inline(f"Bold {status_emoji(settings['style']['bold'])}", b"toggle_bold"),
+                 Button.inline(f"Italic {status_emoji(settings['style']['italic'])}", b"toggle_italic")],
+                [Button.inline(f"Code {status_emoji(settings['style']['code'])}", b"toggle_code"),
+                 Button.inline(f"Quote {status_emoji(settings['style']['quote'])}", b"toggle_quote")],
+                [Button.inline(f"Spoiler {status_emoji(settings['style']['spoiler'])}", b"toggle_spoiler"),
+                 Button.inline(f"Strike {status_emoji(settings['style']['strike'])}", b"toggle_strike")],
+                [Button.inline("🔙 Back", b"panel_main"),
+                 Button.inline("❌ Close", b"panel_close")]
             ]
-        ]
-
-        await e.edit("🎨 **Style Settings**", buttons=buttons)
-
-
-    elif e.data == b"panel_modes":
-
-        buttons = [
-            [
-                Button.inline(f"God {mode_status('god')}", b"toggle_god"),
-                Button.inline(f"Auto {mode_status('autoreply')}", b"toggle_autoreply")
-            ],
-            [
-                Button.inline(f"AntiDel {mode_status('antidelete')}", b"toggle_antidelete"),
-                Button.inline(f"Invis {mode_status('invisible')}", b"toggle_invisible")
-            ],
-            [
-                Button.inline(f"Lock {mode_status('lock')}", b"toggle_lock"),
-                Button.inline("🔙 Back", b"panel_main")
-            ],
-            [
-                Button.inline("❌ Close", b"panel_close")
+            await e.edit("🎨 **Style Settings**", buttons=buttons)
+        elif data == "panel_modes":
+            buttons = [
+                [Button.inline(f"God {status_emoji(settings['god'])}", b"toggle_god"),
+                 Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
+                [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
+                 Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
+                [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock")],
+                [Button.inline("🔙 Back", b"panel_main"),
+                 Button.inline("❌ Close", b"panel_close")]
             ]
-        ]
-
-        await e.edit("⚡ **Mode Settings**", buttons=buttons)
-
-
-    elif e.data == b"panel_status":
-
-        text = "📊 **Current Status**\n"
-        text += "━━━━━━━━━━━━━━━━━━\n\n"
-
-        for k, v in settings["style"].items():
-            text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
-
-        text += "\n"
-
-        for k in ["god", "autoreply", "antidelete", "invisible", "lock"]:
-            text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
-
-        buttons = [
-            [
-                Button.inline("🔙 Back", b"panel_main"),
-                Button.inline("❌ Close", b"panel_close")
+            await e.edit("⚡ **Mode Settings**", buttons=buttons)
+        elif data == "panel_status":
+            text = "📊 **Current Status**\n━━━━━━━━━━━━━━━━━━\n\n"
+            for k, v in settings["style"].items():
+                text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
+            text += "\n"
+            for k in ["god", "autoreply", "antidelete", "invisible", "lock"]:
+                text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
+            buttons = [
+                [Button.inline("🔙 Back", b"panel_main"),
+                 Button.inline("❌ Close", b"panel_close")]
             ]
-        ]
-
-        await e.edit(text, buttons=buttons)
-
-
-    elif e.data == b"panel_main":
-
-        buttons = [
-            [
-                Button.inline("🎨 Styles", b"panel_styles"),
-                Button.inline("⚡ Modes", b"panel_modes")
-            ],
-            [
-                Button.inline("📊 Status", b"panel_status"),
-                Button.inline("❌ Close", b"panel_close")
+            await e.edit(text, buttons=buttons)
+        elif data == "panel_main":
+            buttons = [
+                [Button.inline("🎨 Styles", b"panel_styles"),
+                 Button.inline("⚡ Modes", b"panel_modes")],
+                [Button.inline("📊 Status", b"panel_status"),
+                 Button.inline("❌ Close", b"panel_close")]
             ]
-        ]
-
-        await e.edit(
-            "🔥 **Ultimate Control Panel** 🔥\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            "مدیریت کامل یوزربات",
-            buttons=buttons
-        )
-
-
-    elif e.data.startswith(b"toggle_"):
-
-        key = e.data.decode().replace("toggle_", "")
-
-        if key in settings["style"]:
-            settings["style"][key] = not settings["style"][key]
+            await e.edit(PANEL_TEXT, buttons=buttons)
+        elif data.startswith("toggle_"):
+            key = data.replace("toggle_", "")
+            if key in settings["style"]:
+                settings["style"][key] = not settings["style"][key]
+            elif key in settings:
+                settings[key] = not settings[key]
             save_settings()
-            return await panel_handler(type("obj", (), {
-                "data": b"panel_styles",
-                "edit": e.edit
-            }))
+            # Reuse the current state to update buttons
+            parent_data = "panel_styles" if key in settings["style"] else "panel_modes"
+            # Simulate navigation to refresh view
+            e.data = parent_data.encode()
+            await panel_handler(e)
 
-        elif key in settings:
-            settings[key] = not settings[key]
-            save_settings()
-            return await panel_handler(type("obj", (), {
-                "data": b"panel_modes",
-                "edit": e.edit
-            }))
+# ========= USER COMMANDS =========
 
+@user_client.on(events.NewMessage(outgoing=True, pattern=r".*\.help($|\s)"))
+async def help_cmd(e):
+    if not is_owner(e):
+        return
 
-    elif e.data == b"panel_close":
-        await e.delete()
+    if bot_client:
+        await create_panel()
+        await e.edit("✅ پنل مدیریتی در چت بات باز شد / آپدیت شد.")
+    else:
+        # Fallback to text help if no bot token
+        msg = """
+🔥 **Ultimate Userbot Help** 🔥
+━━━━━━━━━━━━━━━━━━
+🎨 **Styles**: .bold, .italic, .code, .quote, .spoiler, .strike (on/off)
+⚡ **Modes**: .god, .autoreply, .antidelete, .invisible, .lock (on/off)
+🛡️ **Security**: .spam <limit> <time>, .clean <count>, .stats
+🧠 **Keywords**: .addreply k=v, .delreply k
+🎲 **Dice**: .tas <1-6>
+💾 **Media**: .save (reply)
+🎛️ **Management**: .status, .backup, .restore, .setpass <pass>
+"""
+        await e.edit(msg)
 
-# ========= STYLE =========
-@client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote|spoiler|strike) (on|off)"))
+@user_client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote|spoiler|strike) (on|off)"))
 async def toggle_style(e):
     if not is_owner(e):
         return
@@ -292,8 +269,7 @@ async def toggle_style(e):
     save_settings()
     await e.reply(f"{cmd} => {state}")
 
-# ========= TAS =========
-@client.on(events.NewMessage(pattern=r".*\.tas (\d)"))
+@user_client.on(events.NewMessage(pattern=r".*\.tas (\d)"))
 async def tas(e):
     if not is_owner(e):
         return
@@ -306,8 +282,7 @@ async def tas(e):
     except:
         await e.reply("خطا در دریافت عدد تاس 🎲")
 
-# ========= MODES =========
-@client.on(events.NewMessage(pattern=r".*\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
+@user_client.on(events.NewMessage(pattern=r".*\.(god|autoreply|antidelete|invisible|lock) (on|off)"))
 async def toggle_modes(e):
     if not is_owner(e):
         return
@@ -317,8 +292,7 @@ async def toggle_modes(e):
     save_settings()
     await e.reply(f"{cmd} => {'ON' if state else 'OFF'}")
 
-# ========= SPAM CONTROL =========
-@client.on(events.NewMessage(incoming=True))
+@user_client.on(events.NewMessage(incoming=True))
 async def spam_control(e):
     if not e.sender_id or e.sender_id == OWNER_ID or e.out:
         return
@@ -328,7 +302,7 @@ async def spam_control(e):
     if len(user_spam[e.sender_id]) > settings["spam_limit"]:
         await e.delete()
 
-@client.on(events.NewMessage(pattern=r".*\.spam (\d+) (\d+)"))
+@user_client.on(events.NewMessage(pattern=r".*\.spam (\d+) (\d+)"))
 async def set_spam(e):
     if not is_owner(e):
         return
@@ -337,30 +311,27 @@ async def set_spam(e):
     save_settings()
     await e.reply("Spam control updated")
 
-# ========= CLEANER =========
-@client.on(events.NewMessage(pattern=r".*\.clean (\d+)"))
+@user_client.on(events.NewMessage(pattern=r".*\.clean (\d+)"))
 async def cleaner(e):
     if not is_owner(e):
         return
     count = int(e.pattern_match.group(1))
-    async for msg in client.iter_messages(e.chat_id, limit=count):
+    async for msg in user_client.iter_messages(e.chat_id, limit=count):
         if msg.out:
             await msg.delete()
 
-# ========= STATS =========
-@client.on(events.NewMessage(pattern=r".*\.stats"))
+@user_client.on(events.NewMessage(pattern=r".*\.stats"))
 async def stats_cmd(e):
     if not is_owner(e):
         return
     count = group_stats[e.chat_id]
     await e.reply(f"Messages in this chat: {count}")
 
-@client.on(events.NewMessage(incoming=True))
+@user_client.on(events.NewMessage(incoming=True))
 async def stats_counter(e):
     group_stats[e.chat_id] += 1
 
-# ========= KEYWORD REPLY =========
-@client.on(events.NewMessage(pattern=r".*\.addreply (.+)"))
+@user_client.on(events.NewMessage(pattern=r".*\.addreply (.+)"))
 async def add_reply(e):
     if not is_owner(e):
         return
@@ -372,7 +343,7 @@ async def add_reply(e):
     save_settings()
     await e.reply("Reply added")
 
-@client.on(events.NewMessage(pattern=r".*\.delreply (.+)"))
+@user_client.on(events.NewMessage(pattern=r".*\.delreply (.+)"))
 async def del_reply(e):
     if not is_owner(e):
         return
@@ -381,7 +352,7 @@ async def del_reply(e):
     save_settings()
     await e.reply("Reply deleted")
 
-@client.on(events.NewMessage(incoming=True))
+@user_client.on(events.NewMessage(incoming=True))
 async def keyword_auto(e):
     if not e.text:
         return
@@ -389,8 +360,7 @@ async def keyword_auto(e):
         if k in e.text:
             await e.reply(v)
 
-# ========= SAVE SELF-DESTRUCT FILE =========
-@client.on(events.NewMessage(pattern=r".*\.save"))
+@user_client.on(events.NewMessage(pattern=r".*\.save"))
 async def save_media(e):
     if not is_owner(e):
         return
@@ -399,14 +369,13 @@ async def save_media(e):
     msg = await e.get_reply_message()
     if msg and msg.media:
         file = await msg.download_media()
-        await client.send_file("me", file)
+        await user_client.send_file("me", file)
         await e.reply("Saved to Saved Messages ✅")
         if os.path.exists(file):
             os.remove(file)
 
-# ========= STATUS =========
-@client.on(events.NewMessage(pattern=r".*\.status"))
-async def status_cmd(e):
+@user_client.on(events.NewMessage(pattern=r".*\.status"))
+async def status_cmd_user(e):
     if not is_owner(e):
         return
     status_text = f"⚙️ **Bot Status:**\n\n"
@@ -417,15 +386,14 @@ async def status_cmd(e):
     status_text += f"Password: {'Set' if settings['pass'] else 'OFF'}\n"
     await e.reply(status_text)
 
-# ========= BACKUP =========
-@client.on(events.NewMessage(pattern=r".*\.backup"))
+@user_client.on(events.NewMessage(pattern=r".*\.backup"))
 async def backup(e):
     if not is_owner(e):
         return
     save_settings()
     await e.reply("Backup saved")
 
-@client.on(events.NewMessage(pattern=r".*\.restore"))
+@user_client.on(events.NewMessage(pattern=r".*\.restore"))
 async def restore(e):
     if not is_owner(e):
         return
@@ -436,8 +404,7 @@ async def restore(e):
         save_settings()
         await e.reply("Restored")
 
-# ========= SET PASSWORD =========
-@client.on(events.NewMessage(pattern=r".*\.setpass (.+)"))
+@user_client.on(events.NewMessage(pattern=r".*\.setpass (.+)"))
 async def setpass(e):
     if not is_owner(e):
         return
@@ -449,29 +416,32 @@ async def setpass(e):
     save_settings()
     await e.reply(f"Password set to: {settings['pass'] or 'OFF'}")
 
-# ========= GOD MODE =========
-@client.on(events.NewMessage(incoming=True))
+@user_client.on(events.NewMessage(incoming=True))
 async def god_mode_func(e):
     if settings["god"] and not e.out:
         if e.is_private:
             await e.reply("👑 Supreme Mode Active")
 
-# ========= AUTO REPLY =========
-@client.on(events.NewMessage(incoming=True))
+@user_client.on(events.NewMessage(incoming=True))
 async def auto_reply_func(e):
     if settings["autoreply"] and not e.out:
         if e.is_private:
             await e.reply("⚡ Auto Reply Active")
 
-# ========= ANTI DELETE =========
-@client.on(events.MessageDeleted)
+@user_client.on(events.NewMessage)
+async def invisible_handler(e):
+    if settings["invisible"] and not e.out:
+        # Ghost mode implementation: usually involves suppressing ReadHistory
+        # Telethon doesn't send ReadHistory by default, so we just exist as a placeholder.
+        pass
+
+@user_client.on(events.MessageDeleted)
 async def anti_delete_func(e):
     if settings["antidelete"]:
         for msg_id in e.deleted_ids:
             try:
-                msg = await client.get_messages(e.chat_id, ids=msg_id)
+                msg = await user_client.get_messages(e.chat_id, ids=msg_id)
                 if msg:
-                    # فقط متن، عکس، ویدیو، ویس و اهنگ
                     if msg.text or msg.media:
                         sender_name = "کاربر"
                         if msg.sender:
@@ -481,16 +451,12 @@ async def anti_delete_func(e):
                                 sender_name = msg.sender.first_name
 
                         content = msg.text if msg.text else "[مدیا]"
-                        await client.send_message(
+                        await user_client.send_message(
                             LOG_CHAT,
                             f"🛡️ پیام حذف شد از {sender_name}:\n\n{content}"
                         )
             except Exception as ex:
                 print(f"Error in anti-delete: {ex}")
-
-# ========= INVISIBLE =========
-# Note: For userbots, "Invisible" (Ghost Mode) means NOT sending read receipts.
-# Telethon doesn't send them automatically, so we don't need a handler.
 
 # ========= PLUGIN LOADER =========
 if not os.path.exists("plugins"):
@@ -509,25 +475,38 @@ async def main():
         print("--- ERROR: SESSION environment variable is missing! ---")
         return
 
-    print("--- Connecting to Telegram ---")
+    print("--- Starting Clients ---")
     try:
-        await client.start()
-        if not await client.is_user_authorized():
+        await user_client.start()
+        if not await user_client.is_user_authorized():
             print("--- ERROR: SESSION is invalid or expired! ---")
             return
+
+        me = await user_client.get_me()
+        print(f"🔥 Userbot Started as {me.first_name} ({me.id})")
+
+        if bot_client:
+            await bot_client.start(bot_token=BOT_TOKEN)
+            print("🔥 Bot Panel Client Started")
+            await create_panel()
+            print("🔥 Control Panel Ready in Bot Chat")
+
     except Exception as ex:
-        print(f"--- Connection Failed: {ex} ---")
+        print(f"--- Initialization Failed: {ex} ---")
         return
 
-    me = await client.get_me()
-    print(f"🔥 Ultimate Modular Userbot Started as {me.first_name} ({me.id})")
-    await client.run_until_disconnected()
+    # Run both clients
+    if bot_client:
+        await asyncio.gather(
+            user_client.run_until_disconnected(),
+            bot_client.run_until_disconnected()
+        )
+    else:
+        await user_client.run_until_disconnected()
 
 async def start_all():
-    # Run web server in executor (thread)
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, run_web)
-    # Start client
     await main()
 
 if __name__ == "__main__":
