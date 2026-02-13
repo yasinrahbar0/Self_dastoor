@@ -73,12 +73,9 @@ def save_settings():
         print(f"Error saving settings: {e}")
 
 def is_owner(e):
-    # Check if sender is owner (either outgoing or matches OWNER_ID)
     is_owner_id = e.out or (e.sender_id and e.sender_id == OWNER_ID)
-
     if not is_owner_id:
         return False
-
     if settings["pass"]:
         prefix = f".{settings['pass']}"
         if not e.text or not e.text.startswith(prefix):
@@ -88,34 +85,24 @@ def is_owner(e):
 def apply_style(text):
     if not text:
         return text
-
     if settings["style"]["bold"]:
         text = f"**{text}**"
-
     if settings["style"]["italic"]:
         text = f"__{text}__"
-
     if settings["style"]["code"]:
         text = f"`{text}`"
-
     if settings["style"]["quote"]:
         text = f"> {text}"
-
     if settings["style"]["strike"]:
         text = f"~~{text}~~"
-
     if settings["style"]["spoiler"]:
         text = f"||{text}||"
-
     return text
-
-# ========= USER CLIENT HANDLERS =========
 
 @user_client.on(events.NewMessage(outgoing=True))
 async def style_handler(e):
     if not e.text:
         return
-    # Don't style commands
     if e.text.startswith("."):
         return
     styled = apply_style(e.text)
@@ -143,35 +130,32 @@ def status_emoji(val):
 async def create_panel():
     global panel_msg_id
     if not bot_client:
+        print("❌ Bot client not initialized. Cannot create panel.")
         return
 
-    print("⏳ Creating Panel...")
-    # Try to find existing panel message in bot's chat with owner
-    async for msg in bot_client.iter_messages(OWNER_ID, limit=50):
+    print("⏳ Creating/Updating Panel...")
+    # Search in owner's chat with the bot
+    target = OWNER_ID if OWNER_ID else "me"
+
+    async for msg in bot_client.iter_messages(target, limit=50):
         if msg.text and "Ultimate Control Panel" in msg.text:
             panel_msg_id = msg.id
             break
 
-    buttons = [
-        [
-            Button.inline("🎨 Styles", b"panel_styles"),
-            Button.inline("⚡ Modes", b"panel_modes")
-        ],
-        [
-            Button.inline("📊 Status", b"panel_status"),
-            Button.inline("❌ Close", b"panel_close")
-        ]
+    markup = [
+        [Button.inline("🎨 Styles", b"styles"), Button.inline("⚡ Modes", b"modes")],
+        [Button.inline("📊 Status", b"status"), Button.inline("❌ Close", b"close")]
     ]
 
     try:
         if panel_msg_id:
-            await bot_client.edit_message(OWNER_ID, panel_msg_id, PANEL_TEXT, buttons=buttons)
+            await bot_client.edit_message(target, panel_msg_id, PANEL_TEXT, buttons=markup)
         else:
-            msg = await bot_client.send_message(OWNER_ID, PANEL_TEXT, buttons=buttons)
+            msg = await bot_client.send_message(target, PANEL_TEXT, buttons=markup)
             panel_msg_id = msg.id
-        print("✅ Panel created/updated!")
+        print(f"✅ Panel ready in {target}")
     except Exception as e:
-        print(f"❌ Error creating panel: {e}")
+        print(f"❌ Error in create_panel: {e}")
 
 if bot_client:
     @bot_client.on(events.CallbackQuery)
@@ -181,9 +165,9 @@ if bot_client:
 
         data = e.data.decode()
 
-        if data == "panel_close":
+        if data == "close":
             await e.delete()
-        elif data == "panel_styles":
+        elif data == "styles":
             buttons = [
                 [Button.inline(f"Bold {status_emoji(settings['style']['bold'])}", b"toggle_bold"),
                  Button.inline(f"Italic {status_emoji(settings['style']['italic'])}", b"toggle_italic")],
@@ -191,22 +175,22 @@ if bot_client:
                  Button.inline(f"Quote {status_emoji(settings['style']['quote'])}", b"toggle_quote")],
                 [Button.inline(f"Spoiler {status_emoji(settings['style']['spoiler'])}", b"toggle_spoiler"),
                  Button.inline(f"Strike {status_emoji(settings['style']['strike'])}", b"toggle_strike")],
-                [Button.inline("🔙 Back", b"panel_main"),
-                 Button.inline("❌ Close", b"panel_close")]
+                [Button.inline("🔙 Back", b"main"),
+                 Button.inline("❌ Close", b"close")]
             ]
             await e.edit("🎨 **Style Settings**", buttons=buttons)
-        elif data == "panel_modes":
+        elif data == "modes":
             buttons = [
                 [Button.inline(f"God {status_emoji(settings['god'])}", b"toggle_god"),
                  Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
                 [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
                  Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
                 [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock")],
-                [Button.inline("🔙 Back", b"panel_main"),
-                 Button.inline("❌ Close", b"panel_close")]
+                [Button.inline("🔙 Back", b"main"),
+                 Button.inline("❌ Close", b"close")]
             ]
             await e.edit("⚡ **Mode Settings**", buttons=buttons)
-        elif data == "panel_status":
+        elif data == "status":
             text = "📊 **Current Status**\n━━━━━━━━━━━━━━━━━━\n\n"
             for k, v in settings["style"].items():
                 text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
@@ -214,18 +198,16 @@ if bot_client:
             for k in ["god", "autoreply", "antidelete", "invisible", "lock"]:
                 text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
             buttons = [
-                [Button.inline("🔙 Back", b"panel_main"),
-                 Button.inline("❌ Close", b"panel_close")]
+                [Button.inline("🔙 Back", b"main"),
+                 Button.inline("❌ Close", b"close")]
             ]
             await e.edit(text, buttons=buttons)
-        elif data == "panel_main":
-            buttons = [
-                [Button.inline("🎨 Styles", b"panel_styles"),
-                 Button.inline("⚡ Modes", b"panel_modes")],
-                [Button.inline("📊 Status", b"panel_status"),
-                 Button.inline("❌ Close", b"panel_close")]
+        elif data == "main":
+            markup = [
+                [Button.inline("🎨 Styles", b"styles"), Button.inline("⚡ Modes", b"modes")],
+                [Button.inline("📊 Status", b"status"), Button.inline("❌ Close", b"close")]
             ]
-            await e.edit(PANEL_TEXT, buttons=buttons)
+            await e.edit(PANEL_TEXT, buttons=markup)
         elif data.startswith("toggle_"):
             key = data.replace("toggle_", "")
             if key in settings["style"]:
@@ -233,10 +215,8 @@ if bot_client:
             elif key in settings:
                 settings[key] = not settings[key]
             save_settings()
-            # Reuse the current state to update buttons
-            parent_data = "panel_styles" if key in settings["style"] else "panel_modes"
-            # Simulate navigation to refresh view
-            e.data = parent_data.encode()
+            # Refresh view
+            e.data = (b"styles" if key in settings["style"] else b"modes")
             await panel_handler(e)
 
 # ========= USER COMMANDS =========
@@ -245,24 +225,11 @@ if bot_client:
 async def help_cmd(e):
     if not is_owner(e):
         return
-
     if bot_client:
         await create_panel()
         await e.edit("✅ پنل مدیریتی در چت بات باز شد / آپدیت شد.")
     else:
-        # Fallback to text help if no bot token
-        msg = """
-🔥 **Ultimate Userbot Help** 🔥
-━━━━━━━━━━━━━━━━━━
-🎨 **Styles**: .bold, .italic, .code, .quote, .spoiler, .strike (on/off)
-⚡ **Modes**: .god, .autoreply, .antidelete, .invisible, .lock (on/off)
-🛡️ **Security**: .spam <limit> <time>, .clean <count>, .stats
-🧠 **Keywords**: .addreply k=v, .delreply k
-🎲 **Dice**: .tas <1-6>
-💾 **Media**: .save (reply)
-🎛️ **Management**: .status, .backup, .restore, .setpass <pass>
-"""
-        await e.edit(msg)
+        await e.edit("❌ BOT_TOKEN set نشده است.")
 
 @user_client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote|spoiler|strike) (on|off)"))
 async def toggle_style(e):
@@ -435,9 +402,10 @@ async def auto_reply_func(e):
 @user_client.on(events.NewMessage)
 async def invisible_handler(e):
     if settings["invisible"] and not e.out:
-        # Ghost mode implementation: usually involves suppressing ReadHistory
-        # Telethon doesn't send ReadHistory by default, so we just exist as a placeholder.
-        pass
+        try:
+            await user_client(functions.messages.ReadHistoryRequest(peer=e.chat_id, max_id=0))
+        except Exception:
+            pass
 
 @user_client.on(events.MessageDeleted)
 async def anti_delete_func(e):
@@ -453,12 +421,8 @@ async def anti_delete_func(e):
                                 sender_name = f"@{msg.sender.username}"
                             elif hasattr(msg.sender, "first_name") and msg.sender.first_name:
                                 sender_name = msg.sender.first_name
-
                         content = msg.text if msg.text else "[مدیا]"
-                        await user_client.send_message(
-                            LOG_CHAT,
-                            f"🛡️ پیام حذف شد از {sender_name}:\n\n{content}"
-                        )
+                        await user_client.send_message(LOG_CHAT, f"🛡️ پیام حذف شد از {sender_name}:\n\n{content}")
             except Exception as ex:
                 print(f"Error in anti-delete: {ex}")
 
@@ -476,29 +440,25 @@ for file in glob.glob("plugins/*.py"):
 # ========= MAIN =========
 async def main():
     if not SESSION:
-        print("--- ERROR: SESSION environment variable is missing! ---")
+        print("--- ERROR: SESSION variable is missing! ---")
         return
 
     print("--- Starting Clients ---")
     try:
         await user_client.start()
-        if not await user_client.is_user_authorized():
-            print("--- ERROR: SESSION is invalid or expired! ---")
-            return
-
         me = await user_client.get_me()
-        print(f"🔥 Userbot Started as {me.first_name} ({me.id})")
+        print(f"🔥 Userbot Started: {me.first_name}")
 
         if BOT_TOKEN:
             await bot_client.start(bot_token=BOT_TOKEN)
+            print("🔥 Bot Panel Client Started")
             await create_panel()
-            print("🔥 Bot Panel Ready in Bot Chat")
 
     except Exception as ex:
         print(f"--- Initialization Failed: {ex} ---")
         return
 
-    # Run both clients
+    # Keep both running
     if bot_client:
         await asyncio.gather(
             user_client.run_until_disconnected(),
