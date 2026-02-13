@@ -2,9 +2,8 @@ import os, json, asyncio, threading, glob, importlib, random
 from datetime import datetime
 from collections import defaultdict
 from flask import Flask
-from telethon import TelegramClient, events, functions
+from telethon import TelegramClient, events, functions, Button
 from telethon.sessions import StringSession
-from telethon.errors import FloodWaitError
 
 # ========= ENV =========
 API_ID = int(os.getenv("API_ID", 0))
@@ -41,7 +40,14 @@ try:
 except Exception:
     settings = {}
 
-settings.setdefault("style", {"bold": False, "italic": False, "code": False, "quote": False})
+settings.setdefault("style", {
+    "bold": False,
+    "italic": False,
+    "code": False,
+    "quote": False,
+    "spoiler": False,
+    "strike": False
+})
 settings.setdefault("god", False)
 settings.setdefault("autoreply", False)
 settings.setdefault("antidelete", False)
@@ -80,14 +86,25 @@ def is_owner(e):
 def apply_style(text):
     if not text:
         return text
+
     if settings["style"]["bold"]:
         text = f"**{text}**"
+
     if settings["style"]["italic"]:
         text = f"__{text}__"
+
     if settings["style"]["code"]:
         text = f"`{text}`"
+
     if settings["style"]["quote"]:
         text = f"> {text}"
+
+    if settings["style"]["strike"]:
+        text = f"~~{text}~~"
+
+    if settings["style"]["spoiler"]:
+        text = f"||{text}||"
+
     return text
 
 # ========= STYLE HANDLER =========
@@ -112,52 +129,161 @@ DICE_EMOJIS = {
     6: "🎲6️⃣"
 }
 
-# ========= HELP =========
-@client.on(events.NewMessage(pattern=r"(^|\s)\.help($|\s)"))
-async def help_cmd(e):
+# ========= CLEAN DOUBLE ROW CONTROL PANEL =========
+
+def style_status(name):
+    return "🟢" if settings["style"][name] else "🔴"
+
+def mode_status(name):
+    return "🟢" if settings[name] else "🔴"
+
+
+@client.on(events.NewMessage(pattern=r".*\.help($|\s)"))
+async def help_panel(e):
     if not is_owner(e):
         return
-    msg = """
-🔥 Ultimate Modular Userbot 🔥
 
-📌 Styles:
-.bold on/off → فعال/غیر فعال کردن بولد
-.italic on/off → فعال/غیر فعال کردن ایتالیک
-.code on/off → فعال/غیر فعال کردن کد
-.quote on/off → فعال/غیر فعال کردن نقل قول
+    buttons = [
+        [
+            Button.inline("🎨 Styles", b"panel_styles"),
+            Button.inline("⚡ Modes", b"panel_modes")
+        ],
+        [
+            Button.inline("📊 Status", b"panel_status"),
+            Button.inline("❌ Close", b"panel_close")
+        ]
+    ]
 
-⚡ Modes:
-.god on/off → پاسخ خودکار سلطنتی
-.autoreply on/off → پاسخ خودکار ساده
-.antidelete on/off → لاگ آیدی پیام‌های حذف شده
-.invisible on/off → حالت روح (Seen نخوردن)
-.lock on/off → قفل کردن دستورات فقط برای OWNER
+    await e.reply(
+        "🔥 **Ultimate Control Panel** 🔥\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        "مدیریت کامل یوزربات",
+        buttons=buttons
+    )
 
-🛡 Security:
-.spam <limit> <time> → کنترل اسپم کاربران
-.clean <count> → حذف پیام‌های ارسال‌شده خودت
-.stats → تعداد پیام‌های این چت
 
-🧠 Keyword Replies:
-.addreply key=value → اضافه کردن پاسخ خودکار
-.delreply key → حذف پاسخ خودکار
+@client.on(events.CallbackQuery)
+async def panel_handler(e):
+    if e.sender_id != OWNER_ID:
+        return await e.answer("⚠️ You are not the owner!", alert=True)
 
-🎲 Dice:
-.tas <1-6> → ارسال تاس با عدد دلخواه
+    if e.data == b"panel_styles":
 
-💾 Media:
-.save → ذخیره فایل نابودشونده
+        buttons = [
+            [
+                Button.inline(f"Bold {style_status('bold')}", b"toggle_bold"),
+                Button.inline(f"Italic {style_status('italic')}", b"toggle_italic")
+            ],
+            [
+                Button.inline(f"Code {style_status('code')}", b"toggle_code"),
+                Button.inline(f"Quote {style_status('quote')}", b"toggle_quote")
+            ],
+            [
+                Button.inline(f"Spoiler {style_status('spoiler')}", b"toggle_spoiler"),
+                Button.inline(f"Strike {style_status('strike')}", b"toggle_strike")
+            ],
+            [
+                Button.inline("🔙 Back", b"panel_main"),
+                Button.inline("❌ Close", b"panel_close")
+            ]
+        ]
 
-🎛 Management:
-.status → نمایش وضعیت تنظیمات
-.backup → بکاپ تنظیمات
-.restore → ریستور تنظیمات
-.setpass <password> → گذاشتن رمز برای دستورات (off برای غیرفعال کردن)
-"""
-    await e.reply(msg)
+        await e.edit("🎨 **Style Settings**", buttons=buttons)
+
+
+    elif e.data == b"panel_modes":
+
+        buttons = [
+            [
+                Button.inline(f"God {mode_status('god')}", b"toggle_god"),
+                Button.inline(f"Auto {mode_status('autoreply')}", b"toggle_autoreply")
+            ],
+            [
+                Button.inline(f"AntiDel {mode_status('antidelete')}", b"toggle_antidelete"),
+                Button.inline(f"Invis {mode_status('invisible')}", b"toggle_invisible")
+            ],
+            [
+                Button.inline(f"Lock {mode_status('lock')}", b"toggle_lock"),
+                Button.inline("🔙 Back", b"panel_main")
+            ],
+            [
+                Button.inline("❌ Close", b"panel_close")
+            ]
+        ]
+
+        await e.edit("⚡ **Mode Settings**", buttons=buttons)
+
+
+    elif e.data == b"panel_status":
+
+        text = "📊 **Current Status**\n"
+        text += "━━━━━━━━━━━━━━━━━━\n\n"
+
+        for k, v in settings["style"].items():
+            text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
+
+        text += "\n"
+
+        for k in ["god", "autoreply", "antidelete", "invisible", "lock"]:
+            text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
+
+        buttons = [
+            [
+                Button.inline("🔙 Back", b"panel_main"),
+                Button.inline("❌ Close", b"panel_close")
+            ]
+        ]
+
+        await e.edit(text, buttons=buttons)
+
+
+    elif e.data == b"panel_main":
+
+        buttons = [
+            [
+                Button.inline("🎨 Styles", b"panel_styles"),
+                Button.inline("⚡ Modes", b"panel_modes")
+            ],
+            [
+                Button.inline("📊 Status", b"panel_status"),
+                Button.inline("❌ Close", b"panel_close")
+            ]
+        ]
+
+        await e.edit(
+            "🔥 **Ultimate Control Panel** 🔥\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "مدیریت کامل یوزربات",
+            buttons=buttons
+        )
+
+
+    elif e.data.startswith(b"toggle_"):
+
+        key = e.data.decode().replace("toggle_", "")
+
+        if key in settings["style"]:
+            settings["style"][key] = not settings["style"][key]
+            save_settings()
+            return await panel_handler(type("obj", (), {
+                "data": b"panel_styles",
+                "edit": e.edit
+            }))
+
+        elif key in settings:
+            settings[key] = not settings[key]
+            save_settings()
+            return await panel_handler(type("obj", (), {
+                "data": b"panel_modes",
+                "edit": e.edit
+            }))
+
+
+    elif e.data == b"panel_close":
+        await e.delete()
 
 # ========= STYLE =========
-@client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote) (on|off)"))
+@client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote|spoiler|strike) (on|off)"))
 async def toggle_style(e):
     if not is_owner(e):
         return
@@ -363,13 +489,8 @@ async def anti_delete_func(e):
                 print(f"Error in anti-delete: {ex}")
 
 # ========= INVISIBLE =========
-@client.on(events.NewMessage)
-async def invisible_func(e):
-    # For userbots, "Invisible" typically means NOT sending read receipts.
-    # Telethon doesn't send them automatically unless you call ReadHistoryRequest.
-    # So if "Invisible" is ON, we just DO NOTHING.
-    # The previous code was sending them if ON, which is the opposite of ghost mode.
-    pass
+# Note: For userbots, "Invisible" (Ghost Mode) means NOT sending read receipts.
+# Telethon doesn't send them automatically, so we don't need a handler.
 
 # ========= PLUGIN LOADER =========
 if not os.path.exists("plugins"):
