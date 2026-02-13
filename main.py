@@ -1,8 +1,8 @@
-import os, json, asyncio, threading, glob, importlib, random
+import os, json, asyncio, threading, glob, importlib
 from datetime import datetime
 from collections import defaultdict
 from flask import Flask
-from telethon import TelegramClient, events, functions, Button
+from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 
 # ========= ENV =========
@@ -134,18 +134,20 @@ DICE_EMOJIS = {
 
 # ========= BOT PANEL LOGIC =========
 
+panel_msg_id = None
 PANEL_TEXT = "🔥 **Ultimate Control Panel** 🔥\n━━━━━━━━━━━━━━━━━━\nمدیریت کامل یوزربات"
 
 def status_emoji(val):
     return "🟢" if val else "🔴"
 
 async def create_panel():
+    global panel_msg_id
     if not bot_client:
         return
 
+    print("⏳ Creating Panel...")
     # Try to find existing panel message in bot's chat with owner
-    panel_msg_id = None
-    async for msg in bot_client.iter_messages(OWNER_ID, limit=20):
+    async for msg in bot_client.iter_messages(OWNER_ID, limit=50):
         if msg.text and "Ultimate Control Panel" in msg.text:
             panel_msg_id = msg.id
             break
@@ -161,13 +163,15 @@ async def create_panel():
         ]
     ]
 
-    if panel_msg_id:
-        try:
+    try:
+        if panel_msg_id:
             await bot_client.edit_message(OWNER_ID, panel_msg_id, PANEL_TEXT, buttons=buttons)
-        except Exception:
+        else:
             msg = await bot_client.send_message(OWNER_ID, PANEL_TEXT, buttons=buttons)
-    else:
-        await bot_client.send_message(OWNER_ID, PANEL_TEXT, buttons=buttons)
+            panel_msg_id = msg.id
+        print("✅ Panel created/updated!")
+    except Exception as e:
+        print(f"❌ Error creating panel: {e}")
 
 if bot_client:
     @bot_client.on(events.CallbackQuery)
@@ -485,11 +489,10 @@ async def main():
         me = await user_client.get_me()
         print(f"🔥 Userbot Started as {me.first_name} ({me.id})")
 
-        if bot_client:
+        if BOT_TOKEN:
             await bot_client.start(bot_token=BOT_TOKEN)
-            print("🔥 Bot Panel Client Started")
             await create_panel()
-            print("🔥 Control Panel Ready in Bot Chat")
+            print("🔥 Bot Panel Ready in Bot Chat")
 
     except Exception as ex:
         print(f"--- Initialization Failed: {ex} ---")
