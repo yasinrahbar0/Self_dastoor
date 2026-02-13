@@ -138,7 +138,7 @@ def mode_status(name):
     return "🟢" if settings[name] else "🔴"
 
 
-@client.on(events.NewMessage(pattern=r".*\.help($|\s)"))
+@client.on(events.NewMessage(outgoing=True, pattern=r".*\.help($|\s)"))
 async def help_panel(e):
     if not is_owner(e):
         return
@@ -154,7 +154,7 @@ async def help_panel(e):
         ]
     ]
 
-    await e.reply(
+    await e.edit(
         "🔥 **Ultimate Control Panel** 🔥\n"
         "━━━━━━━━━━━━━━━━━━\n"
         "مدیریت کامل یوزربات",
