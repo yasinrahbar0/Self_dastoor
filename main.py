@@ -59,6 +59,8 @@ settings.setdefault("spam_limit", 5)
 settings.setdefault("spam_time", 5)
 settings.setdefault("keywords", {})
 settings.setdefault("pass", "")
+settings.setdefault("muted_chats", [])
+settings.setdefault("mute_all", False)
 
 user_spam = defaultdict(list)
 group_stats = defaultdict(int)
@@ -147,6 +149,9 @@ HELP_TEXT = """
 .addreply key=value → اضافه کردن پاسخ
 .delreply key → حذف پاسخ
 
+🤫 **سکوت:**
+.mute → فعال/غیر فعال کردن سکوت در چت فعلی
+
 🎲 **تاس:**
 .tas <1-6> → ارسال تاس با عدد دلخواه
 
@@ -224,7 +229,8 @@ if bot_client:
                  Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
                 [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
                  Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
-                [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock")],
+                [Button.inline(f"Mute All {status_emoji(settings['mute_all'])}", b"toggle_mute_all"),
+                 Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock")],
                 [Button.inline("🔙 Back", b"main"),
                  Button.inline("❌ Close", b"close")]
             ]
@@ -234,7 +240,7 @@ if bot_client:
             for k, v in settings["style"].items():
                 text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
             text += "\n"
-            for k in ["god", "autoreply", "antidelete", "invisible", "lock"]:
+            for k in ["god", "autoreply", "antidelete", "invisible", "mute_all", "lock"]:
                 text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
             buttons = [
                 [Button.inline("🔙 Back", b"main"),
@@ -281,6 +287,20 @@ async def toggle_style(e):
     settings["style"][cmd] = state == "on"
     save_settings()
     await e.reply(f"{cmd} => {state}")
+
+@user_client.on(events.NewMessage(pattern=r".*\.mute($|\s)"))
+async def mute_cmd(e):
+    if not is_owner(e):
+        return
+    chat_id = e.chat_id
+    if chat_id in settings["muted_chats"]:
+        settings["muted_chats"].remove(chat_id)
+        save_settings()
+        await e.edit("🔊 حالت سکوت در این چت غیرفعال شد.")
+    else:
+        settings["muted_chats"].append(chat_id)
+        save_settings()
+        await e.edit("🤫 حالت سکوت در این چت فعال شد. پیام‌های دیگران حذف خواهند شد.")
 
 @user_client.on(events.NewMessage(pattern=r".*\.tas (\d)"))
 async def tas(e):
@@ -366,8 +386,21 @@ async def del_reply(e):
     await e.reply("Reply deleted")
 
 @user_client.on(events.NewMessage(incoming=True))
+async def mute_handler(e):
+    if e.out:
+        return
+    if settings["mute_all"] or e.chat_id in settings["muted_chats"]:
+        try:
+            await e.delete()
+        except Exception:
+            pass
+
+@user_client.on(events.NewMessage(incoming=True))
 async def keyword_auto(e):
     if not e.text:
+        return
+    # Don't reply if muted (handler above deletes it, but just in case)
+    if settings["mute_all"] or e.chat_id in settings["muted_chats"]:
         return
     for k, v in settings["keywords"].items():
         if k in e.text:
