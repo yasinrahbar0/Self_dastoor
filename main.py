@@ -2,7 +2,7 @@ import os, json, asyncio, threading, glob, importlib
 from datetime import datetime
 from collections import defaultdict
 from flask import Flask
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events, Button, functions
 from telethon.sessions import StringSession
 
 # ========= ENV =========
@@ -101,9 +101,7 @@ def apply_style(text):
 
 @user_client.on(events.NewMessage(outgoing=True))
 async def style_handler(e):
-    if not e.text:
-        return
-    if e.text.startswith("."):
+    if not e.text or e.text.startswith("."):
         return
     styled = apply_style(e.text)
     if styled != e.text:
@@ -130,17 +128,10 @@ def status_emoji(val):
 async def create_panel():
     global panel_msg_id
     if not bot_client:
-        print("❌ Bot client not initialized. Cannot create panel.")
         return
 
-    print("⏳ Creating/Updating Panel...")
-    # Search in owner's chat with the bot
-    target = OWNER_ID if OWNER_ID else "me"
-
-    async for msg in bot_client.iter_messages(target, limit=50):
-        if msg.text and "Ultimate Control Panel" in msg.text:
-            panel_msg_id = msg.id
-            break
+    print("⏳ Creating Panel...")
+    chat = OWNER_ID if OWNER_ID else "me"
 
     markup = [
         [Button.inline("🎨 Styles", b"styles"), Button.inline("⚡ Modes", b"modes")],
@@ -148,14 +139,11 @@ async def create_panel():
     ]
 
     try:
-        if panel_msg_id:
-            await bot_client.edit_message(target, panel_msg_id, PANEL_TEXT, buttons=markup)
-        else:
-            msg = await bot_client.send_message(target, PANEL_TEXT, buttons=markup)
-            panel_msg_id = msg.id
-        print(f"✅ Panel ready in {target}")
+        msg = await bot_client.send_message(chat, PANEL_TEXT, buttons=markup)
+        panel_msg_id = msg.id
+        print(f"✅ Panel created in chat with {chat}")
     except Exception as e:
-        print(f"❌ Error in create_panel: {e}")
+        print(f"❌ Error creating panel: {e}")
 
 if bot_client:
     @bot_client.on(events.CallbackQuery)
@@ -215,8 +203,9 @@ if bot_client:
             elif key in settings:
                 settings[key] = not settings[key]
             save_settings()
-            # Refresh view
-            e.data = (b"styles" if key in settings["style"] else b"modes")
+            # Determine which menu to show
+            target_menu = "styles" if key in settings["style"] else "modes"
+            e.data = target_menu.encode()
             await panel_handler(e)
 
 # ========= USER COMMANDS =========
@@ -440,7 +429,7 @@ for file in glob.glob("plugins/*.py"):
 # ========= MAIN =========
 async def main():
     if not SESSION:
-        print("--- ERROR: SESSION variable is missing! ---")
+        print("--- ERROR: SESSION environment variable is missing! ---")
         return
 
     print("--- Starting Clients ---")
@@ -450,8 +439,11 @@ async def main():
         print(f"🔥 Userbot Started: {me.first_name}")
 
         if BOT_TOKEN:
+            global bot_client
+            if not bot_client:
+                 bot_client = TelegramClient("bot_panel", API_ID, API_HASH)
             await bot_client.start(bot_token=BOT_TOKEN)
-            print("🔥 Bot Panel Client Started")
+            print("🤖 Bot client started")
             await create_panel()
 
     except Exception as ex:
@@ -459,7 +451,7 @@ async def main():
         return
 
     # Keep both running
-    if bot_client:
+    if BOT_TOKEN:
         await asyncio.gather(
             user_client.run_until_disconnected(),
             bot_client.run_until_disconnected()
