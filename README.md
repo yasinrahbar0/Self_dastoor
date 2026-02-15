@@ -7,6 +7,7 @@ Ultimate Modular Final Build – Everything for the OWNER only.
 - All modes (God, AutoReply, AntiDelete, Invisible, Lock)
 - Text Style (Bold, Italic, Code, Quote, Spoiler, Strike)
 - Smart Response (.addreply/.delreply)
+- AI Smart Assistant (.ai)
 - Save self-destructing files (.save)
 - Spam Control, Cleaner, Stats
 - Button Management Panel (.panel)
@@ -23,6 +24,7 @@ Ultimate Modular Final Build – Everything for the OWNER only.
 - `API_HASH`: Your Telegram API Hash
 - `SESSION`: Your Telethon String Session
 - `BOT_TOKEN`: (Optional) Your Telegram Bot Token for the professional control panel.
+- `OPENAI_KEY`: Your OpenAI API Key for AI features.
 - `OWNER_ID`: Your Telegram User ID
 - `LOG_CHAT`: Chat ID for logs (Anti-delete notifications)
 

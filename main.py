@@ -1,6 +1,7 @@
 import os, json, asyncio, threading, glob, importlib
 from datetime import datetime
 from collections import defaultdict
+import openai
 from flask import Flask
 from telethon import TelegramClient, events, Button, functions
 from telethon.sessions import StringSession
@@ -12,6 +13,9 @@ SESSION = os.getenv("SESSION", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 OWNER_ID = int(os.getenv("OWNER_ID", 0))
 LOG_CHAT = int(os.getenv("LOG_CHAT", 0))
+OPENAI_KEY = os.getenv("OPENAI_KEY", "")
+
+openai.api_key = OPENAI_KEY
 
 # ========= FLASK =========
 app = Flask(__name__)
@@ -61,6 +65,7 @@ settings.setdefault("keywords", {})
 settings.setdefault("pass", "")
 settings.setdefault("muted_chats", [])
 settings.setdefault("mute_all", False)
+settings.setdefault("ai_mode", False)
 
 user_spam = defaultdict(list)
 group_stats = defaultdict(int)
@@ -138,6 +143,7 @@ HELP_TEXT = """
 .autoreply on/off → پاسخ خودکار ساده
 .antidelete on/off → لاگ پیام‌های حذف شده
 .invisible on/off → حالت روح
+.ai on/off → پاسخ هوشمند (فقط به پیام‌های شما)
 .lock on/off → قفل دستورات فقط برای OWNER
 
 🛡 **امنیت:**
@@ -229,10 +235,11 @@ if bot_client:
                  Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
                 [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
                  Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
-                [Button.inline(f"Mute All {status_emoji(settings['mute_all'])}", b"toggle_mute_all"),
-                 Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock")],
-                [Button.inline("🔙 Back", b"main"),
-                 Button.inline("❌ Close", b"close")]
+                [Button.inline(f"AI {status_emoji(settings['ai_mode'])}", b"toggle_ai_mode"),
+                 Button.inline(f"Mute All {status_emoji(settings['mute_all'])}", b"toggle_mute_all")],
+                [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock"),
+                 Button.inline("🔙 Back", b"main")],
+                [Button.inline("❌ Close", b"close")]
             ]
             await e.edit("⚡ **Mode Settings**", buttons=buttons)
         elif data == "status":
@@ -240,7 +247,7 @@ if bot_client:
             for k, v in settings["style"].items():
                 text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
             text += "\n"
-            for k in ["god", "autoreply", "antidelete", "invisible", "mute_all", "lock"]:
+            for k in ["god", "autoreply", "antidelete", "invisible", "ai_mode", "mute_all", "lock"]:
                 text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
             buttons = [
                 [Button.inline("🔙 Back", b"main"),
@@ -278,6 +285,15 @@ async def help_cmd(e):
         await e.edit("✅ پنل مدیریتی در چت بات باز شد / آپدیت شد.")
     else:
         await e.edit("❌ BOT_TOKEN set نشده است.")
+
+@user_client.on(events.NewMessage(pattern=r".*\.ai (on|off)"))
+async def toggle_ai(e):
+    if not is_owner(e):
+        return
+    state = e.pattern_match.group(1) == "on"
+    settings["ai_mode"] = state
+    save_settings()
+    await e.reply(f"AI Mode => {'ON' if state else 'OFF'}")
 
 @user_client.on(events.NewMessage(pattern=r".*\.(bold|italic|code|quote|spoiler|strike) (on|off)"))
 async def toggle_style(e):
@@ -384,6 +400,29 @@ async def del_reply(e):
     settings["keywords"].pop(k, None)
     save_settings()
     await e.reply("Reply deleted")
+
+@user_client.on(events.NewMessage(incoming=True))
+async def ai_mode_handler(e):
+    # فقط وقتی AI Mode روشن باشه
+    if not settings["ai_mode"] or e.out:
+        return
+    # فقط پیام‌های OWNER
+    if e.sender_id != OWNER_ID:
+        return
+    if not e.text:
+        return
+
+    try:
+        response = await asyncio.to_thread(
+            openai.ChatCompletion.create,
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": e.text}],
+            max_tokens=150
+        )
+        answer = response['choices'][0]['message']['content'].strip()
+        await e.reply(answer)
+    except Exception as ex:
+        await e.reply(f"AI Error: {ex}")
 
 @user_client.on(events.NewMessage(incoming=True))
 async def mute_handler(e):
@@ -527,7 +566,7 @@ async def main():
         if BOT_TOKEN:
             global bot_client
             if not bot_client:
-                 bot_client = TelegramClient("bot_panel", API_ID, API_HASH)
+                bot_client = TelegramClient("bot_panel", API_ID, API_HASH)
             await bot_client.start(bot_token=BOT_TOKEN)
             print("🤖 Bot client started")
             await create_panel()
