@@ -5,6 +5,7 @@ import openai
 from flask import Flask
 from telethon import TelegramClient, events, Button, functions
 from telethon.sessions import StringSession
+from telethon.errors.rpcerrorlist import MessageNotModifiedError
 
 # ========= ENV =========
 API_ID = int(os.getenv("API_ID", 0))
@@ -112,7 +113,10 @@ async def style_handler(e):
         return
     styled = apply_style(e.text)
     if styled != e.text:
-        await e.edit(styled)
+        try:
+            await e.edit(styled)
+        except MessageNotModifiedError:
+            pass
 
 # ====== EMOJI TASH ======
 DICE_EMOJIS = {
@@ -174,6 +178,75 @@ HELP_TEXT = """
 def status_emoji(val):
     return "🟢" if val else "🔴"
 
+async def render_menu(menu_name, event):
+    try:
+        if menu_name == "main":
+            markup = [
+                [Button.inline("📖 راهنما", b"help")],
+                [Button.inline("🎨 سبک‌ها", b"styles"), Button.inline("⚡ حالت‌ها", b"modes")],
+                [Button.inline("🛡️ امنیت", b"security"), Button.inline("🧠 پاسخ خودکار", b"keywords")],
+                [Button.inline("📊 وضعیت", b"status"), Button.inline("❌ بستن", b"close")]
+            ]
+            await event.edit(PANEL_TEXT, buttons=markup)
+
+        elif menu_name == "help":
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await event.edit(HELP_TEXT, buttons=buttons)
+
+        elif menu_name == "security":
+            text = "🛡️ **امنیت:**\n\n.spam <limit> <time> → کنترل اسپم\n.clean <count> → حذف پیام‌های خودت\n.stats → تعداد پیام‌های چت"
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await event.edit(text, buttons=buttons)
+
+        elif menu_name == "keywords":
+            text = "🧠 **پاسخ خودکار:**\n\n.addreply key=value → اضافه کردن پاسخ\n.delreply key → حذف پاسخ"
+            buttons = [[Button.inline("🔙 Back", b"main")]]
+            await event.edit(text, buttons=buttons)
+
+        elif menu_name == "styles":
+            buttons = [
+                [Button.inline(f"Bold {status_emoji(settings['style']['bold'])}", b"toggle_bold"),
+                 Button.inline(f"Italic {status_emoji(settings['style']['italic'])}", b"toggle_italic")],
+                [Button.inline(f"Code {status_emoji(settings['style']['code'])}", b"toggle_code"),
+                 Button.inline(f"Quote {status_emoji(settings['style']['quote'])}", b"toggle_quote")],
+                [Button.inline(f"Spoiler {status_emoji(settings['style']['spoiler'])}", b"toggle_spoiler"),
+                 Button.inline(f"Strike {status_emoji(settings['style']['strike'])}", b"toggle_strike")],
+                [Button.inline("🔙 Back", b"main"),
+                 Button.inline("❌ Close", b"close")]
+            ]
+            await event.edit("🎨 **Style Settings**", buttons=buttons)
+
+        elif menu_name == "modes":
+            buttons = [
+                [Button.inline(f"God {status_emoji(settings['god'])}", b"toggle_god"),
+                 Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
+                [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
+                 Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
+                [Button.inline(f"AI {status_emoji(settings['ai_mode'])}", b"toggle_ai_mode"),
+                 Button.inline(f"Mute All {status_emoji(settings['mute_all'])}", b"toggle_mute_all")],
+                [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock"),
+                 Button.inline("🔙 Back", b"main")],
+                [Button.inline("❌ Close", b"close")]
+            ]
+            await event.edit("⚡ **Mode Settings**", buttons=buttons)
+
+        elif menu_name == "status":
+            text = "📊 **Current Status**\n━━━━━━━━━━━━━━━━━━\n\n"
+            for k, v in settings["style"].items():
+                text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
+            text += "\n"
+            for k in ["god", "autoreply", "antidelete", "invisible", "ai_mode", "mute_all", "lock"]:
+                text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
+            buttons = [
+                [Button.inline("🔙 Back", b"main"),
+                 Button.inline("❌ Close", b"close")]
+            ]
+            await event.edit(text, buttons=buttons)
+    except MessageNotModifiedError:
+        pass
+    except Exception as e:
+        print(f"❌ Error rendering menu {menu_name}: {e}")
+
 async def create_panel():
     global panel_msg_id
     if not bot_client:
@@ -193,6 +266,8 @@ async def create_panel():
         msg = await bot_client.send_message(chat, PANEL_TEXT, buttons=markup)
         panel_msg_id = msg.id
         print(f"✅ Panel created in chat with {chat}")
+    except MessageNotModifiedError:
+        pass
     except Exception as e:
         print(f"❌ Error creating panel: {e}")
 
@@ -206,62 +281,8 @@ if bot_client:
 
         if data == "close":
             await e.delete()
-        elif data == "help":
-            buttons = [[Button.inline("🔙 Back", b"main")]]
-            await e.edit(HELP_TEXT, buttons=buttons)
-        elif data == "security":
-            text = "🛡️ **امنیت:**\n\n.spam <limit> <time> → کنترل اسپم\n.clean <count> → حذف پیام‌های خودت\n.stats → تعداد پیام‌های چت"
-            buttons = [[Button.inline("🔙 Back", b"main")]]
-            await e.edit(text, buttons=buttons)
-        elif data == "keywords":
-            text = "🧠 **پاسخ خودکار:**\n\n.addreply key=value → اضافه کردن پاسخ\n.delreply key → حذف پاسخ"
-            buttons = [[Button.inline("🔙 Back", b"main")]]
-            await e.edit(text, buttons=buttons)
-        elif data == "styles":
-            buttons = [
-                [Button.inline(f"Bold {status_emoji(settings['style']['bold'])}", b"toggle_bold"),
-                 Button.inline(f"Italic {status_emoji(settings['style']['italic'])}", b"toggle_italic")],
-                [Button.inline(f"Code {status_emoji(settings['style']['code'])}", b"toggle_code"),
-                 Button.inline(f"Quote {status_emoji(settings['style']['quote'])}", b"toggle_quote")],
-                [Button.inline(f"Spoiler {status_emoji(settings['style']['spoiler'])}", b"toggle_spoiler"),
-                 Button.inline(f"Strike {status_emoji(settings['style']['strike'])}", b"toggle_strike")],
-                [Button.inline("🔙 Back", b"main"),
-                 Button.inline("❌ Close", b"close")]
-            ]
-            await e.edit("🎨 **Style Settings**", buttons=buttons)
-        elif data == "modes":
-            buttons = [
-                [Button.inline(f"God {status_emoji(settings['god'])}", b"toggle_god"),
-                 Button.inline(f"Auto {status_emoji(settings['autoreply'])}", b"toggle_autoreply")],
-                [Button.inline(f"AntiDel {status_emoji(settings['antidelete'])}", b"toggle_antidelete"),
-                 Button.inline(f"Invis {status_emoji(settings['invisible'])}", b"toggle_invisible")],
-                [Button.inline(f"AI {status_emoji(settings['ai_mode'])}", b"toggle_ai_mode"),
-                 Button.inline(f"Mute All {status_emoji(settings['mute_all'])}", b"toggle_mute_all")],
-                [Button.inline(f"Lock {status_emoji(settings['lock'])}", b"toggle_lock"),
-                 Button.inline("🔙 Back", b"main")],
-                [Button.inline("❌ Close", b"close")]
-            ]
-            await e.edit("⚡ **Mode Settings**", buttons=buttons)
-        elif data == "status":
-            text = "📊 **Current Status**\n━━━━━━━━━━━━━━━━━━\n\n"
-            for k, v in settings["style"].items():
-                text += f"{k.capitalize()}: {'ON' if v else 'OFF'}\n"
-            text += "\n"
-            for k in ["god", "autoreply", "antidelete", "invisible", "ai_mode", "mute_all", "lock"]:
-                text += f"{k.capitalize()}: {'ON' if settings[k] else 'OFF'}\n"
-            buttons = [
-                [Button.inline("🔙 Back", b"main"),
-                 Button.inline("❌ Close", b"close")]
-            ]
-            await e.edit(text, buttons=buttons)
-        elif data == "main":
-            markup = [
-                [Button.inline("📖 راهنما", b"help")],
-                [Button.inline("🎨 سبک‌ها", b"styles"), Button.inline("⚡ حالت‌ها", b"modes")],
-                [Button.inline("🛡️ امنیت", b"security"), Button.inline("🧠 پاسخ خودکار", b"keywords")],
-                [Button.inline("📊 وضعیت", b"status"), Button.inline("❌ بستن", b"close")]
-            ]
-            await e.edit(PANEL_TEXT, buttons=markup)
+        elif data in ["main", "help", "security", "keywords", "styles", "modes", "status"]:
+            await render_menu(data, e)
         elif data.startswith("toggle_"):
             key = data.replace("toggle_", "")
             if key in settings["style"]:
@@ -269,10 +290,9 @@ if bot_client:
             elif key in settings:
                 settings[key] = not settings[key]
             save_settings()
-            # Determine which menu to show
+            # Determine which menu to refresh
             target_menu = "styles" if key in settings["style"] else "modes"
-            e.data = target_menu.encode()
-            await panel_handler(e)
+            await render_menu(target_menu, e)
 
 # ========= USER COMMANDS =========
 
@@ -282,9 +302,15 @@ async def help_cmd(e):
         return
     if bot_client:
         await create_panel()
-        await e.edit("✅ پنل مدیریتی در چت بات باز شد / آپدیت شد.")
+        try:
+            await e.edit("✅ پنل مدیریتی در چت بات باز شد / آپدیت شد.")
+        except MessageNotModifiedError:
+            pass
     else:
-        await e.edit("❌ BOT_TOKEN set نشده است.")
+        try:
+            await e.edit("❌ BOT_TOKEN set نشده است.")
+        except MessageNotModifiedError:
+            pass
 
 @user_client.on(events.NewMessage(pattern=r".*\.ai (on|off)"))
 async def toggle_ai(e):
@@ -309,14 +335,17 @@ async def mute_cmd(e):
     if not is_owner(e):
         return
     chat_id = e.chat_id
-    if chat_id in settings["muted_chats"]:
-        settings["muted_chats"].remove(chat_id)
-        save_settings()
-        await e.edit("🔊 حالت سکوت در این چت غیرفعال شد.")
-    else:
-        settings["muted_chats"].append(chat_id)
-        save_settings()
-        await e.edit("🤫 حالت سکوت در این چت فعال شد. پیام‌های دیگران حذف خواهند شد.")
+    try:
+        if chat_id in settings["muted_chats"]:
+            settings["muted_chats"].remove(chat_id)
+            save_settings()
+            await e.edit("🔊 حالت سکوت در این چت غیرفعال شد.")
+        else:
+            settings["muted_chats"].append(chat_id)
+            save_settings()
+            await e.edit("🤫 حالت سکوت در این چت فعال شد. پیام‌های دیگران حذف خواهند شد.")
+    except MessageNotModifiedError:
+        pass
 
 @user_client.on(events.NewMessage(pattern=r".*\.tas (\d)"))
 async def tas(e):
